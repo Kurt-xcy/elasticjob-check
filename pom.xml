@@ -9,9 +9,9 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.xcy.elasticjob</groupId>
-    <artifactId>elasticjob-mission1</artifactId>
+    <artifactId>elasticjob-check</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>elasticjob-mission1</name>
+    <name>elasticjob-check</name>
     <packaging>jar</packaging>
     <description>Demo project for Spring Boot</description>
 
