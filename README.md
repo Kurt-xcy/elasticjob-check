@@ -53,13 +53,15 @@ Elastic-job本身并不提供任务的依赖关系，因此，只能自己实现
           
 注：在数据库中设计4个表分别对应为导入、分割、排序、对账的状态，每个表中有10条数据代表10个分片，因此，每个分片结束后可以操作自己对应表中对应的分片状态实现状态的更新。
 下图FileImportJob中的Execute（）方法中导入文件结束将数据库中的状态修改为“finish”，如上右图所示  
+![在这里插入图片描述](https://img-blog.csdnimg.cn/2020091420295020.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NDAwMTY4MQ==,size_16,color_FFFFFF,t_70#pic_center)
 
 而排序FileDivideJob中的execute（）方法内需要未排序与分割完成才能继续执行  
+![在这里插入图片描述](https://img-blog.csdnimg.cn/2020091420301571.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NDAwMTY4MQ==,size_16,color_FFFFFF,t_70#pic_center)
 
 这样实现了任务间的相互依赖。
 ## 4.2 OOM问题
 在对分割文件的排序时，需要将文件所有数据读入JVM内存中，如果文件太大，就会造成OOM问题，因此，本项目中，为避免出现OOM问题，在任务的排序时，可设置一个排序处理的行数阈值，超过该阈值，即进行文件的再分割，对再分割后的文件进行分步排序（避免一次性全部读入内存），再进行文件的合并，这样处理能够避免一次性读入太多数据，当然，这样的操作也更多的用到IO流，造成更多的时间开销。
-
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20200914203052911.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NDAwMTY4MQ==,size_16,color_FFFFFF,t_70#pic_center)
 ## 4.3 续作、重做、跳过
 上文任务依赖中已经描述过，每一任务的开始与结束都会检查数据库中的上一步是否结束“finish”，以及自身状态是否为“ready”。因此，可以方便的实现续作、重做和跳过功能。  
 续作：当此步骤异常结束，只需观察数据库任务执行到哪一步，对当前任务状态赋值为“ready”（若产生异常或错误，可能出现某些分片状态为“ready”未执行，某些分片状态为“finish”已经执行结束，故需全部修改为“ready”开始本步骤），则重新执行后，将会跳过已执行过的步骤（因为状态为“finish”）。  
@@ -68,42 +70,48 @@ Elastic-job本身并不提供任务的依赖关系，因此，只能自己实现
 注：此处续作、重做、跳过的操作均需要对数据库进行操作，调试过程中使用数据库管理软件Navicat进行操作，本项目也封装好了对数据库的操作的service，在控制器中调用对应的service，通过访问对应的url进行操作。  
 
 当然，若是集群部署的话每个实例都含有控制器部分对数据库进行操作，这样难免感觉冗余，因此，可以把对数据库的控制独立出来成为单独的对任务状态操作的项目。该项目可见文件夹《elasticjobstate》，因此，本项目把web访问屏蔽，controller代码仅做展示。
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20200914203252599.png#pic_center)
 
 ## 4.4可视化界面
 Elastic-job官方提供了后台管理界面，显示每个任务当前的分片数、状态、作业信息，可进行失效（暂停）、生效（继续）、终止等操作，可以方便的对任务进行操作以及监测。  
 后台管理项目已打包好见文件夹《elastic-job-lite-console-2.1.4》，windows打开/bin目录下的startup.bat即可运行，访问地址localhost:8899登陆账号密码见《auth.properties》  
-
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20200914203334849.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NDAwMTY4MQ==,size_16,color_FFFFFF,t_70#pic_center)
 ## 4.5 超时报错
 只需要在当前分片执行任务后开启新线程进行任务时间的监控，当超过预定时间，在日志报错。如下图所示，代码中仅在FileImportJob实现超时功能，以作示例。
-
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20200914203515265.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NDAwMTY4MQ==,size_16,color_FFFFFF,t_70#pic_center)
 
 # 5.完成效果
 ## 5.1导出文件
 从数据库中导出数据前，数据库需要有一定量的数据，运行test包下的writeDataToDatabase()方法向数据库中插入10万条数据。之后便可以启动项目，运行Springboot启动方法。
 导出文件如图所示
-
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20200914203545356.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NDAwMTY4MQ==,size_16,color_FFFFFF,t_70#pic_center)  
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20200914203613403.png#pic_center)
 
 每个文件中均有1000条数据，一共1w条数据。
 ## 5.2文件分割
 文件分割将文件分割到10个文件中，每个文件中均只含流水号尾号为分片号的数据。如下图所示。
-
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20200914203646102.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NDAwMTY4MQ==,size_16,color_FFFFFF,t_70#pic_center)  
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20200914203655765.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NDAwMTY4MQ==,size_16,color_FFFFFF,t_70#pic_center)
 ## 5.3文件排序
 文件排序将分割后的10个文件按照流水号排序，如下图所示
 
+![在这里插入图片描述](https://img-blog.csdnimg.cn/2020091420380410.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NDAwMTY4MQ==,size_16,color_FFFFFF,t_70#pic_center)
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20200914203814475.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NDAwMTY4MQ==,size_16,color_FFFFFF,t_70#pic_center)
 
 ## 5.4文件对账
 本项目中目前只生成了一组分割排序好的文件作为主机方文件，默认另一份平台方也已分割排序好在本地目录中。则该步骤文件对账针对如下三种错误进行验证
 数据不匹配----->修改第一行卡号
-
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20200914203855558.png#pic_center)
 数据遗漏----->删除该行
-
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20200914203917450.png#pic_center)
 数据多出或重复----->复制一行
-
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20200914203945947.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NDAwMTY4MQ==,size_16,color_FFFFFF,t_70#pic_center)
 则对账结果在数据库中为
+![在这里插入图片描述](https://img-blog.csdnimg.cn/2020091420460718.png#pic_center)  
 
 ## 5.6部署
 该项目为一个springboot项目，可以使用mvn install -DskipTests命令打包成jar包。
-
-
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20200914205221503.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NDAwMTY4MQ==,size_16,color_FFFFFF,t_70#pic_center)
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20200914205351574.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NDAwMTY4MQ==,size_16,color_FFFFFF,t_70#pic_center)
 使用SFTP工具上传到服务器中用Java -jar即可运行jar包。
 当然，elastic-job支持集群部署，但是，如果部署在同一环境中，注意修改端口号，否则会报错无法运行，尽量部署在不同的环境中。
